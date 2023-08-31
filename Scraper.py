@@ -194,7 +194,7 @@ class ItalkiScraper:
             self.iterate_children(children,i)
 
     def iterate_children(self,children,i):
-        for j in range(i, len(children)):
+        for j in range(0, len(children)):
             children[j].click()
             self.perform_teacher_search()
             self.press_lang_menu()
