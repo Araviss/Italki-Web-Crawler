@@ -1,7 +1,5 @@
 import time
 import re
-from threading import Thread
-from urllib.request import urlopen
 from bs4 import BeautifulSoup
 from selenium import webdriver
 from selenium.webdriver import ActionChains, Keys
@@ -72,7 +70,7 @@ class ItalkiScraper:
         price_match = self.extract_price()
 
         self.update_teacher_info(rating, num_of_students, num_of_lessons, attendance, price_match,
-                                 descriptions[0], descriptions[1], descriptions[2], language_taught)
+                                 descriptions[0].text, descriptions[1].text, descriptions[2].text, language_taught)
 
     def extract_teacher_type(self, soup):
         return soup.find_all('div', class_='md:mb-4 flex flex-row items-center tiny-caption text-gray3 uppercase')
@@ -194,7 +192,7 @@ class ItalkiScraper:
             self.iterate_children(children,i)
 
     def iterate_children(self,children,i):
-        for j in range(0, len(children)):
+        for j in range(1, len(children)):
             children[j].click()
             self.perform_teacher_search()
             self.press_lang_menu()
