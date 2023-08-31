@@ -153,7 +153,7 @@ class ItalkiScraper:
     def get_page_link(self):
         return self.driver.find_element(By.CSS_SELECTOR, 'a.ant-btn.w-50.ant-btn-white').get_attribute('href')
 
-    def is_last_page(page_link):
+    def is_last_page(self, page_link):
         return page_link[-2:] == "10"
 
     def perform_teacher_search(self):
@@ -192,7 +192,7 @@ class ItalkiScraper:
             self.iterate_children(children,i)
 
     def iterate_children(self,children,i):
-        for j in range(1, len(children)):
+        for j in range(15, len(children)):
             children[j].click()
             self.perform_teacher_search()
             self.press_lang_menu()
