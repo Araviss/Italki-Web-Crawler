@@ -2,19 +2,23 @@ import time
 import re
 from bs4 import BeautifulSoup
 from selenium import webdriver
+from selenium.common import StaleElementReferenceException
 from selenium.webdriver import ActionChains, Keys
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait, Select
 from selenium.webdriver.support import expected_conditions as EC
 from pymongo import MongoClient
 import pandas as pd
+from undetected_chromedriver import ChromeOptions
 
 
 class ItalkiScraper:
 
     def __init__(self):
         self.df = None
-        self.driver = webdriver.Chrome()
+        options = webdriver.ChromeOptions()
+        options.add_argument("--headless")
+        self.driver = webdriver.Chrome(options=options)
 
     def run(self):
         self.driver.get('https://www.italki.com/en/teachers/english')
@@ -28,10 +32,20 @@ class ItalkiScraper:
                    'Teaching Style']
         self.df = pd.DataFrame(columns=columns)
 
+    #Sometimes page doesn't load correctly and needs to be refreshed
+    def refresh_page(self):
+        self.driver.refresh()
+
     def press_lang_menu(self):
-        language_button = self.wait_for_element(By.XPATH, '//*[@id="new-filter-bar"]/div[1]/div[1]')
-        language_button.click()
-        time.sleep(10)
+        try:
+            language_button = self.wait_for_element(By.XPATH, '//*[@id="new-filter-bar"]/div[1]/div[1]')
+            language_button.click()
+            time.sleep(10)
+        except:
+            self.refresh_page()
+            self.perform_teacher_search()
+            self.press_lang_menu()
+
 
     def wait_for_element(self, by, selector, timeout=10):
         return WebDriverWait(self.driver, timeout).until(
@@ -53,6 +67,7 @@ class ItalkiScraper:
         }
         self.df = self.df.append(new_row, ignore_index=True)
 
+
     def match_country(self, text):
         pattern = r'^From'
         return re.sub(pattern, '', text)
@@ -71,6 +86,7 @@ class ItalkiScraper:
 
         self.update_teacher_info(rating, num_of_students, num_of_lessons, attendance, price_match,
                                  descriptions[0].text, descriptions[1].text, descriptions[2].text, language_taught)
+        self.insert_records_to_mongodb()
 
     def extract_teacher_type(self, soup):
         return soup.find_all('div', class_='md:mb-4 flex flex-row items-center tiny-caption text-gray3 uppercase')
@@ -108,20 +124,29 @@ class ItalkiScraper:
     def exclude_instant_book_banner(self):
         try:
             elements_to_exclude = self.driver.find_element(By.CSS_SELECTOR, 'div.relative.py-4.bg-transparent.rounded-1')
-            self.exclude_element(elements_to_exclude)
+            self.driver.execute_script("arguments[0].remove()", elements_to_exclude)
         except Exception as e:
             print(e)
+
+
 
     def open_teacher_tabs(self):
         #Scrolls to the top so that driver focus frame
         self.prepare_page()
+        try:
+            teacher_object_collection = self.driver.find_element(By.XPATH, '//*[@id="teacher-search-list"]/div[3]/div[1]')
+            teacher_list = teacher_object_collection.find_elements(By.TAG_NAME, 'a')
+            teacher_list = teacher_list[:-5]
+        except:
+            self.refresh_page()
+            time.sleep(4)
 
-        teacher_object_collection = self.driver.find_element(By.XPATH, '//*[@id="teacher-search-list"]/div[3]/div[1]')
-        teacher_list = teacher_object_collection.find_elements(By.TAG_NAME, 'a')
-        teacher_list = teacher_list[:-5]
+        try:
+            for i in range(len(teacher_list) - 3,len(teacher_list) - 1):
+                self.open_teacher_tab( teacher_list[i])
+        except:
+            return
 
-        for i in range(len(teacher_list) - 1):
-            self.open_teacher_tab( teacher_list[i])
 
     def open_teacher_tab(self, teacher_element):
         action_chains = ActionChains(self.driver)
@@ -159,8 +184,8 @@ class ItalkiScraper:
     def perform_teacher_search(self):
         self.scroll_to_top()
         while True:
-            #if not self.has_results():
-               # break
+            if not self.has_results():
+                break
 
             try:
                 self.click_show_more_button()
@@ -187,18 +212,28 @@ class ItalkiScraper:
         return len(parent_element.find_elements(By.TAG_NAME, 'li'))
 
     def iterate_language_list(self,language_list):
+
         for i in range(len(language_list)):
+
             children = language_list[i].find_elements(By.TAG_NAME, 'li')
             self.iterate_children(children,i)
 
-    def iterate_children(self,children,i):
-        for j in range(15, len(children)):
-            children[j].click()
-            self.perform_teacher_search()
-            self.press_lang_menu()
-            print("this is 'I': ", i)
-            print("this is 'J': ", j)
-            self.insert_records_to_mongodb()
+    def iterate_children(self, children, i):
+
+        for j in range(len(children)):
+            try:
+                children[j].click()
+                self.perform_teacher_search()
+                self.press_lang_menu()
+                print("this is 'I': ", i)
+                print("this is 'J': ", j)
+
+            except StaleElementReferenceException:
+                print("StaleElementReferenceException occurred. Refreshing the page and trying again.")
+                self.refresh_page()
+                time.sleep(5)
+                children = self.driver.find_elements(By.TAG_NAME, 'li')
+
 
     def insert_records_to_mongodb(self):
         if not self.df.empty:
